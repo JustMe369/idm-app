@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDM-like Download Manager</title>
+<style>
+:root{
+  --bg:#0d1015; --panel:#161a22; --panel2:#1d222c; --line:#262c38;
+  --text:#e8ebf1; --muted:#8b94a6; --accent:#4f8cff; --green:#2ecc71;
+  --yellow:#f1c40f; --red:#e74c3c; --purple:#9b59b6; --cyan:#1abc9c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+button{font-family:inherit;cursor:pointer;border:none;border-radius:6px;background:var(--panel2);color:var(--text);padding:7px 12px;font-size:13px;transition:.15s}
+button:hover{background:#2a3140}
+button.primary{background:var(--accent);color:#fff}
+button.primary:hover{background:#3d78e8}
+button.danger{color:#ff8a8a}
+button.small{padding:4px 9px;font-size:12px}
+input,select{background:#0f1319;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;font-family:inherit}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+header{display:flex;align-items:center;gap:16px;padding:14px 22px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.logo{font-size:19px;font-weight:800;letter-spacing:-.3px}
+.logo span{color:var(--accent)}
+.hstats{display:flex;gap:18px;margin-left:auto;color:var(--muted);font-size:12px}
+.hstats b{color:var(--text);font-size:14px;display:block}
+.wrap{display:grid;grid-template-columns:340px 1fr;gap:18px;padding:18px 22px;max-width:1500px;margin:0 auto}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+.panel h3{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.field{margin-bottom:10px}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.field input,.field select{width:100%}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tab{padding:6px 12px;border-radius:20px;background:var(--panel2);color:var(--muted);font-size:12px}
+.tab.active{background:var(--accent);color:#fff}
+.dl{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.dl-head{display:flex;align-items:center;gap:10px}
+.dl-name{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.dl-status{font-size:11px;padding:3px 8px;border-radius:12px;background:var(--panel2);color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.dl-status.running{color:var(--green);background:rgba(46,204,113,.12)}
+.dl-status.paused{color:var(--yellow);background:rgba(241,196,15,.12)}
+.dl-status.completed{color:var(--accent);background:rgba(79,140,255,.12)}
+.dl-status.error{color:var(--red);background:rgba(231,76,60,.12)}
+.dl-status.queued{color:var(--purple);background:rgba(155,89,182,.12)}
+.dl-meta{display:flex;gap:14px;color:var(--muted);font-size:12px;margin:8px 0 6px;flex-wrap:wrap}
+.dl-meta b{color:var(--text);font-weight:600}
+.bar{height:8px;background:#0f1319;border-radius:5px;overflow:hidden;position:relative;margin:6px 0}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--cyan));border-radius:5px;transition:width .3s}
+.bar-fill.done{background:linear-gradient(90deg,var(--green),var(--cyan))}
+.segments{display:flex;gap:2px;height:6px;margin:4px 0 8px}
+.seg{flex:1;background:#0f1319;border-radius:3px;overflow:hidden;position:relative}
+.seg i{position:absolute;left:0;top:0;bottom:0;background:var(--green);display:block}
+.dl-actions{display:flex;gap:6px;flex-wrap:wrap}
+.cat{font-size:10px;padding:2px 7px;border-radius:10px;background:var(--panel2);color:var(--muted);text-transform:uppercase}
+.empty{color:var(--muted);text-align:center;padding:40px 0}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;width:min(680px,92vw);max-height:84vh;overflow:auto}
+.modal h3{margin-top:0}
+.grab-link{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
+.grab-link a{color:var(--accent);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 16px;font-size:13px;z-index:99;display:none}
+.bookmarklet{background:#0f1319;border:1px dashed var(--line);border-radius:8px;padding:10px;font-size:11px;color:var(--muted);word-break:break-all}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">IDM<span>·</span>Like <span style="font-size:11px;color:var(--muted);font-weight:400">download accelerator</span></div>
+  <div class="hstats">
+    <div><b id="h-active">0</b>active</div>
+    <div><b id="h-speed">0 B/s</b>speed</div>
+    <div><b id="h-done">0</b>completed</div>
+    <div><b id="h-queued">0</b>queued</div>
+  </div>
+  <button onclick="openSettings()">⚙ Settings</button>
+  <button onclick="openGrab()">🕸 Site grabber</button>
+</header>
+
+<div class="wrap">
+  <div>
+    <div class="panel">
+      <h3>Add download</h3>
+      <div class="field"><label>URL</label><input id="a-url" placeholder="https://example.com/file.zip"></div>
+      <div class="field"><label>File name (optional)</label><input id="a-name" placeholder="auto"></div>
+      <div class="row">
+        <div class="field"><label>Category</label>
+          <select id="a-cat"><option value="">Auto</option><option>video</option><option>music</option><option>programs</option><option>documents</option><option>compressed</option><option>images</option></select>
+        </div>
+        <div class="field"><label>Connections</label><input id="a-conn" type="number" min="1" max="32" value="8"></div>
+      </div>
+      <div class="field"><label>Speed limit (KB/s, 0 = unlimited)</label><input id="a-speed" type="number" min="0" value="0"></div>
+      <div class="row">
+        <button class="primary" style="flex:2" onclick="addDownload()">⬇ Add download</button>
+        <button style="flex:1" onclick="addDownload(true)">＋ Queue only</button>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h3>Browser integration</h3>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">Drag this bookmarklet to your bookmarks bar, then click it on any page to send it here.</p>
+      <div class="bookmarklet" id="bookmarklet"></div>
+      <p style="color:var(--muted);font-size:11px;margin:10px 0 0">Or use the Site grabber to pull every link from a page.</p>
+    </div>
+  </div>
+
+  <div>
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-f="all">All</div>
+      <div class="tab" data-f="running">Running</div>
+      <div class="tab" data-f="queued">Queued</div>
+      <div class="tab" data-f="paused">Paused</div>
+      <div class="tab" data-f="completed">Completed</div>
+      <div class="tab" data-f="error">Errors</div>
+    </div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="settings-bg" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="field"><label>Download directory</label><input id="s-dir"></div>
+    <div class="row">
+      <div class="field"><label>Max simultaneous downloads</label><input id="s-conc" type="number" min="1" max="10"></div>
+      <div class="field"><label>Default connections</label><input id="s-conn" type="number" min="1" max="32"></div>
+    </div>
+    <div class="field"><label>Global speed limit (KB/s)</label><input id="s-speed" type="number" min="0"></div>
+    <div class="row">
+      <button class="primary" onclick="saveSettings()">Save</button>
+      <button onclick="closeSettings()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="grab-bg" onclick="if(event.target===this)closeGrab()">
+  <div class="modal">
+    <h3>Site grabber</h3>
+    <div class="field"><label>Page URL</label><input id="g-url" placeholder="https://example.com/files"></div>
+    <div class="field"><label>Filter (regex, optional)</label><input id="g-pattern" placeholder="\.zip$|\.pdf$"></div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="primary" onclick="grabLinks()">Find links</button>
+      <button onclick="closeGrab()">Close</button>
+    </div>
+    <div id="grab-results"></div>
+    <button class="primary" id="grab-add" style="display:none;width:100%;margin-top:10px" onclick="grabAdd()">Add all to queue</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = location.origin + '/api';
+let FILTER = 'all';
+let LAST = {};
+
+function fmtBytes(n){
+  if(!n) return '0 B';
+  const u=['B','KB','MB','GB','TB']; let i=0;
+  while(n>=1024 && i<u.length-1){n/=1024;i++}
+  return n.toFixed(n>=100||i===0?0:1)+' '+u[i];
+}
+function fmtEta(s){
+  if(!s) return '—';
+  const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60;
+  return (h?h+'h ':'')+(m?m+'m ':'')+sec+'s';
+}
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block';
+  setTimeout(()=>t.style.display='none',2500);
+}
+
+async function api(path, opts){
+  const r = await fetch(API+path, opts);
+  if(!r.ok){ const e=await r.json().catch(()=>({detail:'error'})); throw new Error(e.detail||'error'); }
+  return r.json();
+}
+
+async function addDownload(queueOnly){
+  const url=document.getElementById('a-url').value.trim();
+  if(!url){ toast('URL is required'); return; }
+  const body={
+    url,
+    filename:document.getElementById('a-name').value.trim()||null,
+    category:document.getElementById('a-cat').value||null,
+    max_conn:parseInt(document.getElementById('a-conn').value)||8,
+    speed_limit:(parseInt(document.getElementById('a-speed').value)||0)*1024,
+    start:!queueOnly
+  };
+  try{
+    await api('/downloads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    document.getElementById('a-url').value=''; document.getElementById('a-name').value='';
+    toast(queueOnly?'Added to queue':'Download started');
+    load();
+  }catch(e){ toast(e.message); }
+}
+
+function segBar(segs,total){
+  if(!segs||!segs.length) return '';
+  let h='<div class="segments">';
+  for(const s of segs){
+    const len=s.end-s.start+1;
+    const pct=len>0?Math.min(100,(s.downloaded/len)*100):0;
+    h+=`<div class="seg" title="${fmtBytes(s.downloaded)} / ${fmtBytes(len)}"><i style="width:${pct}%"></i></div>`;
+  }
+  return h+'</div>';
+}
+
+function render(list){
+  const box=document.getElementById('list');
+  const filtered=list.filter(d=>FILTER==='all'||d.status===FILTER);
+  if(!filtered.length){ box.innerHTML='<div class="empty">No downloads yet.<br>Add a URL to get started.</div>'; return; }
+  box.innerHTML=filtered.map(d=>{
+    const pct=d.total?Math.min(100,(d.downloaded/d.total)*100):0;
+    const acts=[];
+    if(d.status==='running') acts.push(`<button class="small" onclick="act('${d.id}','pause')">⏸ Pause</button>`);
+    if(d.status==='paused'||d.status==='error'||d.status==='canceled') acts.push(`<button class="small primary" onclick="act('${d.id}','resume')">▶ Resume</button>`);
+    if(d.status==='running'||d.status==='queued') acts.push(`<button class="small" onclick="act('${d.id}','cancel')">⏹ Cancel</button>`);
+    acts.push(`<button class="small danger" onclick="act('${d.id}','delete')">🗑 Delete</button>`);
+    if(d.status==='completed') acts.push(`<a href="${API}/file/${d.id}" class="small" style="text-decoration:none"><button class="small primary">📂 Open</button></a>`);
+    return `<div class="dl">
+      <div class="dl-head">
+        <div class="dl-name" title="${d.filename}">${d.filename}</div>
+        ${d.category?`<span class="cat">${d.category}</span>`:''}
+        <span class="dl-status ${d.status}">${d.status}</span>
+      </div>
+      <div class="dl-meta">
+        <span>⬇ <b>${fmtBytes(d.downloaded)}</b> / ${d.total?fmtBytes(d.total):'unknown'}</span>
+        <span>⚡ <b>${fmtBytes(d.speed)}/s</b></span>
+        <span>⏱ <b>${fmtEta(d.eta)}</b></span>
+        <span>🔗 <b>${d.status==='running'?d.segments.filter(s=>!s.done).length:0}</b> active</span>
+        ${d.speed_limit?`<span>🚦 <b>${fmtBytes(d.speed_limit)}/s</b></span>`:''}
+      </div>
+      <div class="bar"><div class="bar-fill ${d.status==='completed'?'done':''}" style="width:${pct}%"></div></div>
+      ${segBar(d.segments,d.total)}
+      ${d.error?`<div style="color:var(--red);font-size:11px;margin-bottom:6px">⚠ ${d.error}</div>`:''}
+      <div class="dl-actions">${acts.join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+async function act(id, action){
+  try{
+    if(action==='delete') await api('/downloads/'+id,{method:'DELETE'});
+    else await api('/downloads/'+id+'/'+action,{method:'POST'});
+    load();
+  }catch(e){ toast(e.message); }
+}
+
+async function load(){
+  try{
+    const list=await api('/downloads');
+    render(list);
+    const active=list.filter(d=>d.status==='running').length;
+    const queued=list.filter(d=>d.status==='queued').length;
+    const done=list.filter(d=>d.status==='completed').length;
+    const speed=list.filter(d=>d.status==='running').reduce((a,d)=>a+d.speed,0);
+    document.getElementById('h-active').textContent=active;
+    document.getElementById('h-queued').textContent=queued;
+    document.getElementById('h-done').textContent=done;
+    document.getElementById('h-speed').textContent=fmtBytes(speed)+'/s';
+  }catch(e){ console.error(e); }
+}
+
+document.getElementById('tabs').addEventListener('click',e=>{
+  const t=e.target.closest('.tab'); if(!t) return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); FILTER=t.dataset.f; load();
+});
+
+function openSettings(){
+  api('/settings').then(s=>{
+    document.getElementById('s-dir').value=s.download_dir;
+    document.getElementById('s-conc').value=s.max_concurrent;
+    document.getElementById('s-conn').value=s.max_conn;
+    document.getElementById('s-speed').value=Math.round(s.global_speed_limit/1024);
+    document.getElementById('settings-bg').style.display='flex';
+  });
+}
+function closeSettings(){ document.getElementById('settings-bg').style.display='none'; }
+async function saveSettings(){
+  const body={
+    download_dir:document.getElementById('s-dir').value.trim(),
+    max_concurrent:parseInt(document.getElementById('s-conc').value)||3,
+    max_conn:parseInt(document.getElementById('s-conn').value)||8,
+    global_speed_limit:(parseInt(document.getElementById('s-speed').value)||0)*1024
+  };
+  try{ await api('/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); closeSettings(); toast('Settings saved'); }
+  catch(e){ toast(e.message); }
+}
+
+let GRAB_LINKS=[];
+function openGrab(){ document.getElementById('grab-bg').style.display='flex'; }
+function closeGrab(){ document.getElementById('grab-bg').style.display='none'; }
+async function grabLinks(){
+  const url=document.getElementById('g-url').value.trim();
+  const pattern=document.getElementById('g-pattern').value.trim();
+  if(!url){ toast('URL required'); return; }
+  const box=document.getElementById('grab-results');
+  box.innerHTML='<div class="empty">Scanning page…</div>';
+  try{
+    const r=await api('/grab',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,pattern})});
+    GRAB_LINKS=r.links;
+    if(!r.links.length){ box.innerHTML='<div class="empty">No matching links found.</div>'; document.getElementById('grab-add').style.display='none'; return; }
+    box.innerHTML=r.links.map((l,i)=>`<div class="grab-link"><input type="checkbox" checked data-i="${i}" style="width:auto"><a href="${l.url}" target="_blank">${l.name}</a></div>`).join('');
+    document.getElementById('grab-add').style.display='block';
+  }catch(e){ box.innerHTML='<div class="empty" style="color:var(--red)">'+e.message+'</div>'; }
+}
+async function grabAdd(){
+  const idx=[...document.querySelectorAll('#grab-results input:checked')].map(x=>+x.dataset.i);
+  const url=document.getElementById('g-url').value.trim();
+  try{
+    await api('/grab/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,pattern:document.getElementById('g-pattern').value.trim()})});
+    toast('Added '+idx.length+' links to queue'); closeGrab(); load();
+  }catch(e){ toast(e.message); }
+}
+
+// bookmarklet
+(function(){
+  const code="javascript:(function(){var u=encodeURIComponent(location.href);window.open('"+location.origin+"/add?url='+u,'_blank');})();";
+  document.getElementById('bookmarklet').textContent=code;
+})();
+
+load(); setInterval(load,1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+[Unit]
+Description=IDM-like Download Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/idm-app
+ExecStart=/root/.hermes/installs/76f6e7e5145b5f39/environments/d5996f1402df4f9c98b6fc101a98123a/venv/bin/python3 /root/idm-app/app.py
+Environment=IDM_PORT=8090
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
